@@ -14,6 +14,7 @@ export class ServerResponse {
   statusMessage: string = 'OK'
   finished: boolean = false
   request: IncomingMessage //用于请求结束后重置数据
+  closed: boolean = false
 
   private _headers: Map<string, string> = new Map()
   private _body: buffer.Buffer
@@ -34,10 +35,12 @@ export class ServerResponse {
     this._body = null
     this.content_type = null
     this.finished = false
+    this.closed = false
     this.request.reset()
   }
 
   clear() {
+    this.closed = true
     this.client = null
     this._headers.clear()
     this._headers = null
@@ -86,6 +89,11 @@ export class ServerResponse {
     return this
   }
 
+  setStatusCode(statusCode: number): ServerResponse {
+    this.statusCode = statusCode
+    return this
+  }
+
   writeJson(json: object): Promise<void> {
     this.content_type = new ContentType(ContentType.APPLICATION_JSON)
     this._body = buffer.from(JSON.stringify(json))
@@ -114,6 +122,10 @@ export class ServerResponse {
 
   private _end(): Promise<void> {
     this.finished = true
+    //客户端主动关闭连接后，不再继续往下执行
+    if (this.closed) {
+      return
+    }
     this.content_length = this._body?.length || 0
     const header: buffer.Buffer = buffer.from(this.getFinalHeaderMessage());
     const body: buffer.Buffer = this._body

@@ -15,6 +15,7 @@ export class IncomingMessage {
   protocol: string = 'HTTP/1.1'
   method: string = ''
   url: string = '/'
+  originalUrl: string = ''
   headers: Map<string, string> = new Map()
   queryParameters: Map<string, string> = new Map()
   form: Map<string, string[]> = new Map()

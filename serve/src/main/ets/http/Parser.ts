@@ -33,6 +33,7 @@ export class Parser {
       for (let name of queryNames) {
         request.queryParameters[name] = result.getQueryValue(name)
       }
+      request.originalUrl = original
       request.url = result.path
       request.protocol = status[2]
 
