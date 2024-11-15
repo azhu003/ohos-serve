@@ -29,11 +29,12 @@ export abstract class EventEmitter {
    * @param eventName 字符串，事件名称
    * @param callback 处理事件函数
    */
-  on(eventName, callback): void {
+  on(eventName, callback): EventEmitter {
     if (!this.listenerObject[eventName]) {
       this.listenerObject[eventName] = [];
     }
     this.listenerObject[eventName].push(callback);
+    return this
   }
 
   /**

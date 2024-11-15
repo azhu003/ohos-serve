@@ -106,8 +106,10 @@ export class ServerResponse {
     return this._end()
   }
 
-  end(message: string) {
-    this._body = buffer.from(message)
+  end(message: string | undefined) {
+    if (message) {
+      this._body = buffer.from(message)
+    }
     this._end()
   }
 

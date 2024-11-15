@@ -31,7 +31,7 @@ export class Parser {
       const result: uri.URI = new uri.URI(original)
       const queryNames = result.getQueryNames()
       for (let name of queryNames) {
-        request.queryParameters[name] = result.getQueryValue(name)
+        request.queryParameters.set(name, result.getQueryValue(name))
       }
       request.originalUrl = original
       request.url = result.path
@@ -42,12 +42,12 @@ export class Parser {
       while (line) {
         const index: number = line.indexOf(':');
         if (index > 0) {
-          request.headers[line.substring(0, index).trim().toLowerCase()] = line.substring(index + 1).trim();
+          request.headers.set(line.substring(0, index).trim().toLowerCase(), line.substring(index + 1).trim())
         }
         line = lines.shift()
       }
 
-      const connection = request.headers['connection']
+      const connection = request.headers.get('connection')
       if (IncomingMessage.HTTP_VERSION === request.protocol
         && (connection === undefined || !(/close/ig.test(connection)))) {
         request.isKeepLive = true

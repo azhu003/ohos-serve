@@ -3,6 +3,9 @@ import { socket } from '@kit.NetworkKit'
 import { ContentType } from '.'
 import { Parser } from './Parser'
 import { BufferPool } from './BufferPool'
+import { getLogger } from '..'
+
+const logger = getLogger('IncomingMessage')
 
 export class IncomingMessage {
   public static HTTP_VERSION: string = 'HTTP/1.1';
@@ -30,11 +33,19 @@ export class IncomingMessage {
   }
 
   getContentLength(): number {
-    return this.headers['content-length'] || 0
+    const length = this.headers.get('content-length')
+    if (length) {
+      return parseInt(length)
+    }
+    return 0
+  }
+
+  getCurrentBodyLength(): number {
+    return this.pool.getCurrentBodyLength()
   }
 
   getContentType(): string {
-    return this.headers['content-type'] || ''
+    return this.headers.get('content-type') || ''
   }
 
   parseBody(): Promise<void> {
@@ -42,7 +53,7 @@ export class IncomingMessage {
       try {
         if (this.method === 'POST') {
           // 获取请求头中的content-type
-          let contentType: ContentType = new ContentType(this.headers['content-type']);
+          let contentType: ContentType = new ContentType(this.headers.get('content-type'));
           // 如果content-type是multipart，解析multipart/form-data格式的数据
           if (contentType.isMultipart()) {
             this.fileParams = new Map<string, string[]>()
@@ -56,14 +67,16 @@ export class IncomingMessage {
               Parser.parseFormData(bodyBuffer, this.form)
             } else if (contentType.getContentType() === ContentType.APPLICATION_JSON) {
               this.body = Parser.parseJson(bodyBuffer)
-            } else if (contentType.getContentType() === ContentType.APPLICATION_STREAM) {
-
+            } else {
+              logger.info(`ParseBody Binary data -> ${contentType.getContentType()}`)
+              this.body = bodyBuffer
             }
           }
         }
         this.pool.reset() //body解析完成后随即释放
         resolve()
       } catch (e) {
+        logger.error(`parseBody error: ${(e ? JSON.stringify(e) : e)}`)
         reject(e)
       }
     })

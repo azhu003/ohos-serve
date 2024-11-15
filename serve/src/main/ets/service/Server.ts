@@ -59,15 +59,23 @@ export class Server extends EventEmitter {
           response.setKeepLive()
         }
         response.request = request
-        logger.info("--- header-event " + JSON.stringify(request.headers))
+        logger.info("--- header-event " + JSON.stringify([...request.headers]))
       } catch (e) {
         logger.info("--- header-event error: " + e.message)
         response.writeError(HttpError.error(500))
       }
     })
+    request.pool.on("data-event", (buffer: buffer.Blob) => {
+      try {
+        // server.emit('progress', ,request.getCurrentBodyLength(), request.getContentLength(), buffer)
+      } catch (e) {
+        logger.info("--- progress-event error: " + e.message)
+        response.writeError(HttpError.error(500))
+      }
+    })
     request.pool.on("complete-event", () => {
       try {
-        logger.info("--- complete-event -> Prepare to decode")
+        // logger.info("--- complete-event -> Prepare to decode")
         request.parseBody()
           .then(() => {
             server.emit('request', request, response)
@@ -86,7 +94,8 @@ export class Server extends EventEmitter {
         const start = Date.now().valueOf()
         request.remote = value.remoteInfo
         request.pool.push(buffer.from(value.message), request)
-        logger.info(`<<<--- receive message: process -> ${Date.now().valueOf() - start}ms`)
+        logger.info(`<<<--- receive message: ${request.getContentType()} length: ${value.message.byteLength} process -> ${Date.now()
+          .valueOf() - start}ms`)
       } catch (e) {
         logger.info("--- message error: " + e?.message)
         response.writeError(HttpError.error(500))
