@@ -28,6 +28,9 @@ export class IncomingMessage {
 
   isKeepLive: boolean
 
+  isChunked: boolean = false
+  isEnd: boolean = false
+
   constructor(pool: BufferPool) {
     this.pool = pool
   }
@@ -80,6 +83,10 @@ export class IncomingMessage {
         reject(e)
       }
     })
+  }
+
+  on(event: string, callback) {
+    this.pool.on(event, callback)
   }
 
   reset() {

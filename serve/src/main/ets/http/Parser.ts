@@ -13,51 +13,53 @@ const logger: Logger = getLogger('Parser')
 
 export class Parser {
   static parseHeader(socket: string, incoming: IncomingMessage): IncomingMessage {
-    try {
-      // 把socket字符串按照换行符分割成多行，并取出第一行
-      const lines: string[] = socket.split(/[\r\n]+/);
-      let line: string | undefined = lines.shift();
+    // 把socket字符串按照换行符分割成多行，并取出第一行
+    const lines: string[] = socket.split(/[\r\n]+/);
+    let line: string | undefined = lines.shift();
 
-      // 把第一行按照空格分割，得到请求行数据 {POST /index HTTP/1.1}
-      let status: string[] = (line !== '') ? line?.split(' ') : []
-      if (status.length != 3) {
-        throw Error("Bad Request")
-      }
-
-      const request = incoming
-      request.method = status[0].toUpperCase()
-      //获取URL请求路径和URL参数
-      let original = status[1]
-      const result: uri.URI = new uri.URI(original)
-      const queryNames = result.getQueryNames()
-      for (let name of queryNames) {
-        request.queryParameters.set(name, result.getQueryValue(name))
-      }
-      request.originalUrl = original
-      request.url = result.path
-      request.protocol = status[2]
-
-      // 请求头
-      line = lines.shift();
-      while (line) {
-        const index: number = line.indexOf(':');
-        if (index > 0) {
-          request.headers.set(line.substring(0, index).trim().toLowerCase(), line.substring(index + 1).trim())
-        }
-        line = lines.shift()
-      }
-
-      const connection = request.headers.get('connection')
-      if (IncomingMessage.HTTP_VERSION === request.protocol
-        && (connection === undefined || !(/close/ig.test(connection)))) {
-        request.isKeepLive = true
-      }
-
-      return request
-    } catch (e) {
-      logger.error(`parseHeader error: ${JSON.stringify(e)}`)
-      throw new Error(`SERVER INTERNAL ERROR: IOException: ${e.message}`)
+    // 把第一行按照空格分割，得到请求行数据 {POST /index HTTP/1.1}
+    let status: string[] = (line !== '') ? line?.split(' ') : []
+    if (status.length != 3) {
+      throw Error("Bad Request")
     }
+
+    const request = incoming
+    request.method = status[0].toUpperCase()
+    //获取URL请求路径和URL参数
+    let original = status[1]
+    const result: uri.URI = new uri.URI(original)
+    const queryNames = result.getQueryNames()
+    for (let name of queryNames) {
+      request.queryParameters.set(name, result.getQueryValue(name))
+    }
+    request.originalUrl = original
+    request.url = result.path
+    request.protocol = status[2]
+
+    // 请求头
+    line = lines.shift();
+    while (line) {
+      const index: number = line.indexOf(':');
+      if (index > 0) {
+        request.headers.set(line.substring(0, index).trim().toLowerCase(), line.substring(index + 1).trim())
+      }
+      line = lines.shift()
+    }
+
+    const connection = request.headers.get('connection')
+    if (IncomingMessage.HTTP_VERSION === request.protocol
+      && (connection === undefined || !(/close/ig.test(connection)))) {
+      request.isKeepLive = true
+    }
+
+    return request
+
+    // try {
+    //
+    // } catch (e) {
+    //   logger.error(`ParseHeader error: ${e?.message}`)
+    //   throw e
+    // }
   }
 
   static parseFormData(body: buffer.Buffer, target: Map<string, string[]>) {

@@ -1,10 +1,13 @@
-import { buffer } from "@kit.ArkTS";
-import { buf2String, EventEmitter } from "../utils";
-import { IncomingMessage } from ".";
+import { buffer } from '@kit.ArkTS';
+import { buf2String, EventEmitter, getLogger } from '../utils';
+import { IncomingMessage, ServerResponse } from '.';
+import { Parser } from './Parser';
 
 const number2 = 2;
 const number3 = 3;
 const number4 = 4;
+
+const logger = getLogger('BufferPool')
 
 export class BufferPool extends EventEmitter {
   private expandSize: number = 1024 * 1024 //每次扩容的长度
@@ -19,7 +22,11 @@ export class BufferPool extends EventEmitter {
     this.buffer = buffer.alloc(size);
   }
 
-  push(message: buffer.Buffer, request: IncomingMessage): void {
+  push(message: buffer.Buffer, request: IncomingMessage, response: ServerResponse): void {
+    if (this.getCurrentBodyLength() > 0 && (request.getContentType() === 'video/mp4')) {
+      super.emit("data", message)
+      return
+    }
     const availLength = this.buffer.length - this.length
     if (message.length > availLength) {
       let exLength = Math.ceil((this.length + message.length) / this.expandSize) * this.expandSize;
@@ -43,14 +50,27 @@ export class BufferPool extends EventEmitter {
     if (!this.headEnd) {
       this.headEnd = this.findHeaderEnd(message.toString('utf-8'), message.length)
       if (this.headEnd) {
+        //解析请求头信息
         const header = this.buffer.toString('utf-8', this.readPos, this.readPos + this.headEnd)
-        super.emit("header-event", header)
+        Parser.parseHeader(header, request)
+        if (request.isKeepLive) {
+          response.setKeepLive()
+        }
+        response.request = request
+        super.emit("header-event")
       }
       this.headEnd = this.readPos + this.headEnd
+      if (request.getContentLength() > this.getCurrentBodyLength()) {
+        request.isChunked = true
+      }
+    }
+    if (this.headEnd && this.length > this.headEnd) {
+      super.emit("progress-event", message)
     }
     if (this.headEnd && this.length >= this.headEnd) {
       const length = this.length - this.headEnd
       if (length == request.getContentLength()) {
+        request.isEnd = true
         super.emit("complete-event")
       }
     }
