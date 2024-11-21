@@ -2,10 +2,10 @@ import { socket } from '@kit.NetworkKit';
 import { BusinessError } from '@kit.BasicServicesKit';
 import { buffer, JSON } from '@kit.ArkTS';
 import { ServeOptions } from './ServeOptions';
-import { Parser } from '../http/Parser';
 import { BufferPool } from '../http/BufferPool';
 import { EventEmitter, getLogger, Logger } from '../utils';
 import { HttpError, IncomingMessage, ServerResponse } from '../http';
+import { SubscribeEvent } from './SubscribeEvent';
 
 const logger: Logger = getLogger('TCPService')
 const DEFAULT_TIMEOUT: number = 10000
@@ -15,31 +15,46 @@ const DEFAULT_PORT: number = 8080
 export class Server extends EventEmitter {
   private socket: socket.TCPSocketServer = socket.constructTCPSocketServerInstance();
   private options: ServeOptions = {}
+  private subscribe: SubscribeEvent | undefined
 
-  async start(options: ServeOptions) {
-    this.options = {
-      hostname: options.hostname || DEFAULT_HOSTNAME,
-      port: options.port || DEFAULT_PORT,
-      timeout: options.timeout || DEFAULT_TIMEOUT
-    }
-    const address: socket.NetAddress = {
-      address: this.options.hostname || DEFAULT_HOSTNAME,
-      port: this.options.port || DEFAULT_PORT
-    }
-    await this.socket.listen(address)
-    const extraOptions: socket.TCPExtraOptions = { socketTimeout: this.options.timeout || DEFAULT_TIMEOUT }
-    await this.socket.setExtraOptions(extraOptions)
-    this.socket.on("error", (error: BusinessError) => {
-      logger.error(`on error, err: ${JSON.stringify(error)}`);
-    })
-    this.socket.on("connect", (conn) => {
-      this.onConnect(this, conn)
-    })
-    logger.info(`tcp listened on ${this.options.hostname}:${this.options.port}`)
+  constructor(subscribe: SubscribeEvent | undefined) {
+    super()
+    this.subscribe = subscribe
   }
 
-  public listen(port?: number, host?: string): void {
-    this.start({ hostname: host, port: port })
+  async start(options: ServeOptions): Promise<boolean> {
+    try {
+      this.options = {
+        hostname: options.hostname || DEFAULT_HOSTNAME,
+        port: options.port || DEFAULT_PORT,
+        timeout: options.timeout || DEFAULT_TIMEOUT
+      }
+      const address: socket.NetAddress = {
+        address: this.options.hostname || DEFAULT_HOSTNAME,
+        port: this.options.port || DEFAULT_PORT
+      }
+      await this.socket.listen(address)
+      const extraOptions: socket.TCPExtraOptions = {
+        keepAlive: true,
+        socketTimeout: this.options.timeout || DEFAULT_TIMEOUT
+      }
+      await this.socket.setExtraOptions(extraOptions)
+      this.socket.on("error", (error: BusinessError) => {
+        logger.error(`on error, err: ${JSON.stringify(error)}`);
+      })
+      this.socket.on("connect", (conn) => {
+        this.onConnect(this, conn)
+      })
+      logger.info(`tcp listened on ${this.options.hostname}:${this.options.port}`)
+      return true
+    } catch (e) {
+      logger.error(`tcp start error ${e.message}`)
+      return false
+    }
+  }
+
+  public listen(port?: number, host?: string): Promise<boolean> {
+    return this.start({ hostname: host, port: port })
   }
 
   stop() {
@@ -52,28 +67,27 @@ export class Server extends EventEmitter {
     logger.info("--- connect client id: " + connect.clientId)
     const request: IncomingMessage = new IncomingMessage(new BufferPool(IncomingMessage.BUFSIZE))
     const response: ServerResponse = new ServerResponse(connect)
-    request.pool.on("header-event", (data) => {
+    this.subscribe?.onConnect(request, response)
+    request.on("header-event", () => {
       try {
-        Parser.parseHeader(data, request)
-        if (request.isKeepLive) {
-          response.setKeepLive()
-        }
-        response.request = request
-        logger.info("--- header-event " + JSON.stringify([...request.headers]))
+        // logger.info("--- header-event " + JSON.stringify([...request.headers]))
+        this.subscribe?.onHeader(request, response)
+        // server.emit('request', request, response)
       } catch (e) {
         logger.info("--- header-event error: " + e.message)
         response.writeError(HttpError.error(500))
       }
     })
-    request.pool.on("data-event", (buffer: buffer.Blob) => {
+    request.on("data", (chunk: buffer.Buffer) => {
       try {
-        // server.emit('progress', ,request.getCurrentBodyLength(), request.getContentLength(), buffer)
+        // server.emit('request', request, response)
+        this.subscribe?.onData(request, response, chunk)
       } catch (e) {
-        logger.info("--- progress-event error: " + e.message)
+        logger.info("--- header-event error: " + e.message)
         response.writeError(HttpError.error(500))
       }
     })
-    request.pool.on("complete-event", () => {
+    request.on("complete-event", () => {
       try {
         // logger.info("--- complete-event -> Prepare to decode")
         request.parseBody()
@@ -89,15 +103,15 @@ export class Server extends EventEmitter {
         response.writeError(HttpError.error(500))
       }
     })
-    connect.on('message', async (value: socket.SocketMessageInfo) => {
+    connect.on('message', (value: socket.SocketMessageInfo) => {
       try {
         const start = Date.now().valueOf()
         request.remote = value.remoteInfo
-        request.pool.push(buffer.from(value.message), request)
+        request.pool.push(buffer.from(value.message), request, response)
         logger.info(`<<<--- receive message: ${request.getContentType()} length: ${value.message.byteLength} process -> ${Date.now()
           .valueOf() - start}ms`)
       } catch (e) {
-        logger.info("--- message error: " + e?.message)
+        logger.info(`--- message error: ${e?.message} stack: ${e?.stack}`)
         response.writeError(HttpError.error(500))
       }
     })

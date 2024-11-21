@@ -1,7 +1,7 @@
 import { querystring } from '@ohos/node-polyfill';
 import Router from './trouter';
 import parser from './url';
-import { StatusCode, http } from '../http';
+import { http, StatusCode } from '../http';
 
 function lead(x) {
     return x.charCodeAt(0) === 47 ? x : ('/' + x);
@@ -38,6 +38,8 @@ class Polka extends Router {
         this.handler = this.handler.bind(this);
         this.onError = opts.onError || onError; // catch-all handler
         this.onNoMatch = opts.onNoMatch || this.onError.bind(null, { code: 404 });
+        //added by jerry
+        this.subscriber = opts.subscriber
     }
 
     add(method, pattern, ...fns) {
@@ -70,9 +72,8 @@ class Polka extends Router {
     }
 
     listen(port, host) {
-        (this.server = this.server || http.createServer()).on('request', this.handler);
-        this.server.listen(port, host);
-        return this;
+        (this.server = this.server || http.createServer(this.subscriber)).on('request', this.handler);
+        return this.server.listen(port, host);
     }
 
     handler(req, res, info) {

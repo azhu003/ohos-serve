@@ -1,6 +1,8 @@
 import type { IncomingMessage, ServerResponse } from '../http';
 import type { Methods, Trouter } from './trouter';
 import type { Server } from '../service';
+import { buffer } from '@kit.ArkTS';
+import { SubscribeEvent } from '../service/SubscribeEvent';
 
 export interface RequestHandler<T extends Request> {
   // tslint:disable-next-line callable-types (This is extended from and can't extend from a type alias in ts<2.2)
@@ -103,15 +105,16 @@ export interface Polka<T extends Request> extends Trouter {
   /**
    * Boots (or creates) the underlying `http.Server` for the first time.
    */
-  listen(port?: number, hostname?: string, listeningListener?: (message: string) => void): this;
+  // listen(port?: number, hostname?: string, listeningListener?: (message: string) => void): this;
+  listen(port?: number, hostname?: string): Promise<boolean>;
 
-  listen(port?: number, listeningListener?: (message?: string) => void): this;
+  // listen(port?: number, listeningListener?: (message?: string) => void): this;
 
   /**
    * Boots (or creates) the underlying `http.Server` for the first time.
    * All arguments are passed to server.listen directly with no changes.
    */
-  listen(...args: unknown[]): this;
+  // listen(...args: unknown[]): this;
 
   /**
    * The main Polka `IncomingMessage` handler.
@@ -167,6 +170,8 @@ export interface Options {
    * A handler when no route definitions were matched.
    */
   onNoMatch?(req: Request, res: ServerResponse): void;
+
+  subscriber?: SubscribeEvent | undefined
 }
 
 /**
