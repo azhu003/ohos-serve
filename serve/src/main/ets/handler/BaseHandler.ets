@@ -1,6 +1,6 @@
-import { HttpError } from "./..";
-import { HttpExchange } from "../http/HttpExchange";
-import { HttpHandler } from "./HttpHandler";
+import { HttpError } from './..';
+import { HttpExchange } from '../http/HttpExchange';
+import { HttpHandler } from './HttpHandler';
 
 export abstract class BaseHandler implements HttpHandler {
   method: string
@@ -10,7 +10,8 @@ export abstract class BaseHandler implements HttpHandler {
   }
 
   handle(exchange: HttpExchange): void {
-    if (exchange.method !== this.method) {
+    if (exchange.getRequestMethod() != this.method) {
+      console.info(`reuqest  404: ${exchange.getRequestMethod()} ${exchange.originalUrl}`)
       exchange.writeError(HttpError.error(404))
       return
     }

@@ -4,7 +4,6 @@ import { buffer } from '@kit.ArkTS'
 export interface HttpExchange {
   originalUrl: string
   protocol: string
-  method: string
   path: string
   query: Map<string, string>
   isEnd: boolean
