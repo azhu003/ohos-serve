@@ -101,8 +101,8 @@ export class HttpServerImpl implements HttpServer {
     return new Promise<void>((resolve) => {
       this.socket.off("connect", (connect: socket.TCPSocketConnection) => {
         logger.info("取消连接 ->> " + connect.clientId)
-        resolve()
       })
+      resolve()
     })
   }
 
