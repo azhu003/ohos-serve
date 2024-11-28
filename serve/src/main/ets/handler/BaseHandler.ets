@@ -4,19 +4,18 @@ import { HttpHandler } from './HttpHandler';
 
 export abstract class BaseHandler implements HttpHandler {
   method: string
+  handler: (exchange: HttpExchange) => void
 
-  constructor(method: string) {
+  constructor(method: string, handler: (exchange: HttpExchange) => void) {
     this.method = method
+    this.handler = handler
   }
 
-  handle(exchange: HttpExchange): void {
+  handle(exchange: HttpExchange) {
     if (exchange.getRequestMethod() != this.method) {
       console.info(`reuqest  404: ${exchange.getRequestMethod()} ${exchange.originalUrl}`)
-      exchange.writeError(HttpError.error(404))
-      return
+      throw HttpError.error(404)
     }
-    this.handler(exchange)
+    return this.handler(exchange)
   }
-
-  abstract handler(exchange: HttpExchange): void
 }

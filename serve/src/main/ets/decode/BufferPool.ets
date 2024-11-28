@@ -1,4 +1,4 @@
-import { buffer } from '@kit.ArkTS';
+import { ArkTSUtils, buffer, Queue } from '@kit.ArkTS';
 import { buf2String, getLogger } from '../utils';
 import { HttpExchangeImpl } from '../http/impl';
 
@@ -19,38 +19,65 @@ export class BufferPool {
 
   isSegmented: boolean = false
   exchange: HttpExchangeImpl
-  onHeader: (headers: string) => Promise<void>
+  onHeader: (headers: string) => void
+  streams: Queue<ArrayBuffer> = new Queue()
+  isPushing: boolean = false
+  private lock_: ArkTSUtils.locks.AsyncLock = new ArkTSUtils.locks.AsyncLock();
+  index: number = 0
 
-  constructor(exchange: HttpExchangeImpl, onHeader: (headers: string) => Promise<void>) {
+  constructor(exchange: HttpExchangeImpl, onHeader: (headers: string) => void) {
     this.buffer = buffer.alloc(BUFSIZE)
     this.exchange = exchange
     this.onHeader = onHeader
   }
 
-  async push(buf: ArrayBuffer): Promise<void> {
+  async push(buf: ArrayBuffer) {
     if (!this.buffer) {
       return
     }
+    if (this.isPushing) {
+      this.streams.add(buf)
+      logger.debug(`--- 阻塞 -> 延后处理 ---`)
+      return
+    }
+    await this.lock_.lockAsync(() => this.isPushing = true, ArkTSUtils.locks.AsyncLockMode.EXCLUSIVE)
     let message: buffer.Buffer | undefined
     if (!this.headEnd && !this.isSegmented) {
       message = buffer.from(buf)
       const str = message.toString()
       this.headEnd = this.findHeaderEnd(str, message.length)
       if (this.headEnd > 0) {
-        await this.onHeader(str.substring(0, this.headEnd))
+        this.onHeader(str.substring(0, this.headEnd))
         this.headEnd = this.readPos + this.headEnd
         if (this.length === 0) {
           this.readPos = this.headEnd
         }
       }
     }
-
-    const onStream = this.exchange.getAttribute('onStream')
-    if (onStream instanceof Function) {
+    const onData = this.exchange.getAttribute('on-data')
+    if (onData instanceof Function) {
       this.isSegmented = true
-      this.length += buf.byteLength
-      onStream(buf)
-      this.checkEnd()
+      let stream: ArrayBuffer
+      if (this.readPos) {
+        stream = buf.slice(this.readPos)
+        this.readPos = 0
+      } else {
+        stream = buf
+      }
+      // LocalSend伪chunked传输content-length!=文件长度?
+      if (this.length == 0) {
+        this.length += this.headEnd
+      }
+      this.length += stream.byteLength
+      this.index += 1
+      onData(stream, this.index)
+      this.isPushing = false
+      if (this.streams.length > 0) {
+        const detained = this.streams.pop()
+        this.push(detained)
+      } else {
+        this.checkEnd()
+      }
       return
     }
     if (!message) {
@@ -77,18 +104,29 @@ export class BufferPool {
       this.writeStart += message.length
     }
     this.checkEnd()
+    this.isPushing = false
+    if (this.streams.length > 0) {
+      const detained = this.streams.pop()
+      this.push(detained)
+    }
   }
 
   private checkEnd() {
     if (this.headEnd > 0 && this.length >= this.headEnd) {
       const length = this.length - this.headEnd
       const contentLength: number | undefined = this.exchange.getRequestHeaders().getContentLength()
+      // logger.debug(`checkEnd length: ${length} contentLength: ${contentLength}`)
       if ((contentLength === undefined && !this.exchange.getRequestHeaders().hasChunked()) || length == contentLength) {
         this.exchange.isEnd = true
-        if (this.buffer) {
+        if (this.buffer && !this.isSegmented) {
           this.exchange.setRequestBody(buffer.from(this.buffer.buffer.slice(0, length)))
         }
-        this.exchange.getHttpContext()?.getHandler()?.handle(this.exchange)
+        const onFinish = this.exchange.getAttribute('on-end')
+        if (onFinish && onFinish instanceof Function) {
+          onFinish()
+        } else {
+          this.exchange.getHttpContext()?.getHandler()?.handle(this.exchange)
+        }
         this.reset()
       }
     }

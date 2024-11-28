@@ -38,7 +38,7 @@ export class HttpServerImpl implements HttpServer {
       const extraOptions: socket.TCPExtraOptions = {
         keepAlive: true,
         socketTimeout: this.connectTimeout,
-        receiveBufferSize: 1024 * 1024
+        receiveBufferSize: 1024 * 1024,
       }
       await this.socket.setExtraOptions(extraOptions)
       this.socket.on("error", (error: BusinessError) => {
@@ -58,35 +58,29 @@ export class HttpServerImpl implements HttpServer {
   private onConnected(server: HttpServer, connect: socket.TCPSocketConnection) {
     logger.info("--- connect client id: " + connect.clientId)
     const exchange: HttpExchangeImpl = new HttpExchangeImpl(connect)
-    const pool: BufferPool = new BufferPool(exchange, (header: string): Promise<void> => {
-      return new Promise((resolve, reject) => {
-        try {
-          Parser.parseHeader(header, exchange)
-          const context: HttpContext = new HttpContextImpl(exchange.path, server)
-          const handler = this.handlers?.get(exchange.path)
-          if (!handler) {
-            reject(HttpError.error(404))
-          } else {
-            context.setHandler(handler)
-            exchange.setHttpContext(context)
-            handler.handle(exchange)
-            resolve()
-          }
-        } catch (e) {
-          logger.error(`--- parse header error: ${JSON.stringify(e)} message: ${e?.message} stack:\n${e?.stack}`)
-          if (e instanceof HttpError) {
-            reject(e)
-          } else {
-            reject(HttpError.error(500))
-          }
+    const pool: BufferPool = new BufferPool(exchange, (header: string) => {
+      try {
+        Parser.parseHeader(header, exchange)
+        const context: HttpContext = new HttpContextImpl(exchange.path, server)
+        const handler = this.handlers?.get(exchange.path)
+        if (!handler) {
+          logger.info(`<<<--- ${exchange.getRequestMethod()} ${exchange.path} 404`)
+          throw HttpError.error(404)
+        } else {
+          context.setHandler(handler)
+          exchange.setHttpContext(context)
+          handler.handle(exchange)
         }
-      })
+      } catch (e) {
+        logger.error(`--- parse header error: ${JSON.stringify(e)} message: ${e?.message} stack:\n${e?.stack}`)
+        throw (e instanceof Error) ? e : HttpError.error(500)
+      }
     })
-    connect.on('message', async (value: socket.SocketMessageInfo) => {
+    connect.on('message', (value: socket.SocketMessageInfo) => {
       try {
         exchange.setRemoteAddress(Objects.clone<InetSocketAddress, socket.SocketRemoteInfo>({} as InetSocketAddress, value.remoteInfo))
-        logger.info(`<<<--- receive message: length: ${value.message.byteLength}`)
-        await pool.push(value.message)
+        // logger.info(`<<<--- receive message: length: ${value.message.byteLength}`)
+        pool.push(value.message)
       } catch (e) {
         logger.info(`--- message error: ${e?.message} stack: ${e?.stack}`)
         if (e instanceof HttpError) {
